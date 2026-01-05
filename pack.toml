@@ -1,0 +1,4 @@
+[custom.all.idris2-cdk]
+type   = "local"
+path   = "."
+ipkg   = "idris2-cdk.ipkg"
