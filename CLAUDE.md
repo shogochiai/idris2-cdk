@@ -1,40 +1,29 @@
-# idris2-cdk
+# Project Agent Instructions
 
-Idris2 CDK (Canister Development Kit) for Internet Computer Protocol.
-
-## Build
+## Quick Reference
 
 ```bash
-# Local build
-idris2 --build idris2-cdk.ipkg
+# Analyze codebase and get recommended actions
+lazy core ask <target_dir>
 
-# Or with pack
-pack build idris2-cdk
+# Phase 1 (Vibe Bootstrap): Focus on test discovery
+lazy core ask <target_dir> --steps=4
+
+# Phase 2 (Spec Emergence): Bidirectional parity
+lazy core ask <target_dir> --steps=1,2,3
+
+# Phase 3 (TDVC Loop): Chase Zero Gap, find implicit bugs, and Vibe More
+lazy core ask <target_dir> --steps=1,2,3,4
+lazy core ask <target_dir> --steps=5
 ```
 
-## Modules
+## Interpreting Output
 
-- `ICP.IC0` - FFI boundary layer (raw ic0 system calls)
-- `ICP.API` - Safe wrappers (caller, time, cycles, etc.)
-- `ICP.Candid.Types` - Candid type system with `Candidable` typeclass
-- `ICP.StableMemory` - `Storable` typeclass with `StableValue`/`StableSeq`
-- `ICP.Management.HttpOutcall` - HTTP outcall types
-- `ICP.Management.TECDSA` - Threshold ECDSA signing types
+- **URGENT** actions: Execute immediately
+- **High** priority: Address in current session
+- **Medium/Low**: Queue for later
 
-## Usage
+## Policy Mapping
 
-Add to your `pack.toml`:
-
-```toml
-[custom.all.idris2-cdk]
-type = "github"
-url  = "https://github.com/shogochiai/idris2-cdk"
-ipkg = "idris2-cdk.ipkg"
-```
-
-Import in your code:
-
-```idris
-import ICP.API
-import ICP.Candid.Types
-```
+`lazy core ask` converts gaps → signals → recommendations.
+Follow recommendations to maintain project health.
