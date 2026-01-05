@@ -22,3 +22,5 @@ modules = ICP.IC0
         , FRC.Upgrade
         , FRC.HttpOutcall
         , FRC.EVMChain
+        -- Karma (Indexed/Graded Monad extensions)
+        , Karma.Indexed
