@@ -25,14 +25,17 @@
 |||   import FRC.Conflict
 module FRC.Core
 
--- Re-export all submodules
+-- Re-export core submodules
 import public FRC.Conflict
 import public FRC.Evidence
 import public FRC.Outcome
 import public FRC.Cycles
 import public FRC.Upgrade
-import public FRC.HttpOutcall
-import public FRC.EVMChain
+
+-- Note: FRC.HttpOutcall and FRC.EVMChain are NOT re-exported to avoid
+-- type collisions. Import them explicitly when needed:
+--   import FRC.HttpOutcall
+--   import FRC.EVMChain
 
 -- Re-export ICP.Types for convenience
 import public ICP.Types
