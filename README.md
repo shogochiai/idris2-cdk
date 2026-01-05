@@ -4,6 +4,28 @@ Idris2 Canister Development Kit for Internet Computer Protocol (ICP).
 
 Type-safe, dependently-typed bindings for building ICP canisters in Idris2.
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      idris2-ouc                             │
+│               (OptimisticUpgraderCanister)                  │
+└─────────────────────────────────────────────────────────────┘
+                            │ uses
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      idris2-cdk                             │
+│   ICP.IC0 │ ICP.API │ ICP.Candid │ ICP.StableMemory        │
+└─────────────────────────────────────────────────────────────┘
+                            │ built on
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      idris2-wasm                            │
+│   Idris2 → RefC → Emscripten → WASM → WASI stub → IC       │
+│   (Reference implementation proving the pipeline works)     │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ## Features
 
 - **Type-safe IC0 bindings** - Raw FFI primitives with proper Idris2 types
@@ -56,6 +78,13 @@ idris2 --build idris2-cdk.ipkg
 # or
 pack build idris2-cdk
 ```
+
+## Related Projects
+
+| Project | Description |
+|---------|-------------|
+| [idris2-wasm](https://github.com/shogochiai/idris2-wasm) | Reference implementation - Idris2→WASM→IC pipeline |
+| [idris2-ouc](https://github.com/shogochiai/idris2-optimisticupgradercanister) | OptimisticUpgraderCanister built with idris2-cdk |
 
 ## License
 
