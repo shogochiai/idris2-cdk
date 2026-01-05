@@ -7,8 +7,18 @@ license = "MIT"
 sourcedir = "src"
 
 modules = ICP.IC0
+        , ICP.Types
         , ICP.API
         , ICP.Candid.Types
         , ICP.StableMemory
         , ICP.Management.HttpOutcall
         , ICP.Management.TECDSA
+        -- FRC (Failure-Recovery Calculus) modules
+        , FRC.Core
+        , FRC.Conflict
+        , FRC.Evidence
+        , FRC.Outcome
+        , FRC.Cycles
+        , FRC.Upgrade
+        , FRC.HttpOutcall
+        , FRC.EVMChain

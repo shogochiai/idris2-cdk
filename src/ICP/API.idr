@@ -11,6 +11,7 @@
 module ICP.API
 
 import public ICP.IC0
+import public ICP.Types
 import Data.List
 import Data.String
 import Data.Nat
@@ -33,28 +34,10 @@ statusFromCode 3 = Stopped
 statusFromCode _ = Unknown
 
 --------------------------------------------------------------------------------
--- Reject Codes
+-- Reject Codes (use ICP.Types.RejectCode)
 --------------------------------------------------------------------------------
 
-||| IC reject codes
-public export
-data RejectCode
-  = NoError           -- 0
-  | SysFatal          -- 1
-  | SysTransient      -- 2
-  | DestinationInvalid -- 3
-  | CanisterReject    -- 4
-  | CanisterError     -- 5
-  | UnknownReject Int32
-
-rejectFromCode : Int32 -> RejectCode
-rejectFromCode 0 = NoError
-rejectFromCode 1 = SysFatal
-rejectFromCode 2 = SysTransient
-rejectFromCode 3 = DestinationInvalid
-rejectFromCode 4 = CanisterReject
-rejectFromCode 5 = CanisterError
-rejectFromCode n = UnknownReject n
+-- RejectCode is now imported from ICP.Types
 
 --------------------------------------------------------------------------------
 -- Message Information
@@ -90,7 +73,7 @@ export
 rejectCode : IO RejectCode
 rejectCode = do
   code <- primIO prim__msgRejectCode
-  pure (rejectFromCode code)
+  pure (rejectCodeFromInt code)
 
 --------------------------------------------------------------------------------
 -- Reply
