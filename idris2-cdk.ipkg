@@ -24,3 +24,4 @@ modules = ICP.IC0
         , FRC.EVMChain
         -- Karma (Indexed/Graded Monad extensions)
         , Karma.Indexed
+        , Karma.Graded
