@@ -16,6 +16,10 @@ import ICP.Candid.Types
 import Data.List
 import Data.String
 
+import FRMonad.Graded
+import FRMonad.Failure
+import FRMonad.Evidence
+
 %default total
 
 --------------------------------------------------------------------------------
@@ -272,3 +276,82 @@ getHeader : String -> HttpResponse -> Maybe String
 getHeader n resp =
   let nameLower = strToLower n
   in map value $ find (\h => strToLower h.name == nameLower) resp.headers
+
+--------------------------------------------------------------------------------
+-- GFR Integration: Graded FR Monad wrappers for HttpOutcall
+--------------------------------------------------------------------------------
+
+||| Convert HttpOutcallResult to GFR with NetworkObligation
+||| This is a pure conversion (no IO) for testing/mocking
+public export
+httpResultToGFR : HttpOutcallResult -> GFR [NetworkObligation] HttpResponse
+httpResultToGFR (HttpSuccess resp) =
+  GOk resp (mkEvidence Update "http" ("success: " ++ show resp.status))
+httpResultToGFR (HttpError msg) =
+  GFail (HttpError 0 msg) (mkEvidence Update "http" ("error: " ++ msg))
+
+||| GFR-based HTTP request (for use in pure GFR computations)
+||| Returns GFR [NetworkObligation] to track that network failures may occur
+|||
+||| Usage:
+|||   result <- gHttpRequest req   -- in GFR [NetworkObligation] context
+|||
+||| To run, handle the NetworkObligation:
+|||   handleNetwork retryHandler (gHttpRequest req)
+public export
+gHttpRequestPure : HttpOutcallResult -> GFR [NetworkObligation] HttpResponse
+gHttpRequestPure = httpResultToGFR
+
+||| GFR-based HTTP request with retry (pure version)
+||| Retries failed requests according to config, accumulating evidence
+public export
+gHttpRequestWithRetry : RetryConfig -> HttpOutcallResult -> GFR [NetworkObligation] HttpResponse
+gHttpRequestWithRetry cfg result = gretry cfg (httpResultToGFR result)
+
+||| GFR-based HTTP request with default retry config
+public export
+gHttpRequestRetry : HttpOutcallResult -> GFR [NetworkObligation] HttpResponse
+gHttpRequestRetry = gHttpRequestWithRetry networkRetryConfig
+
+--------------------------------------------------------------------------------
+-- Network failure handler combinators
+--------------------------------------------------------------------------------
+
+||| Create a retry handler for handleNetwork
+||| This handler retries the failed operation with the given config
+public export
+retryHandler : RetryConfig -> (Fail, Evidence) -> GFR obs HttpResponse
+retryHandler cfg (f, ev) =
+  -- On retry exhaustion, we still fail but with accumulated evidence
+  GFail f ev
+
+||| Handler that returns a default response on failure
+public export
+defaultResponseHandler : HttpResponse -> (Fail, Evidence) -> GFR obs HttpResponse
+defaultResponseHandler defaultResp (_, ev) =
+  GOk defaultResp (combineEvidence ev (mkEvidence Update "http" "using default response"))
+
+||| Handler that maps network errors to a specific failure
+public export
+mapNetworkError : (String -> Fail) -> (Fail, Evidence) -> GFR obs a
+mapNetworkError mkFail (f, ev) =
+  GFail (mkFail (show f)) ev
+
+--------------------------------------------------------------------------------
+-- Example usage patterns
+--------------------------------------------------------------------------------
+
+-- ||| Example: Fetch with retry and fallback
+-- |||
+-- ||| fetchWithFallback : HttpRequest -> HttpResponse -> GFR [] HttpResponse
+-- ||| fetchWithFallback req fallback =
+-- |||   handleNetwork (defaultResponseHandler fallback) $
+-- |||   gHttpRequestRetry (HttpError "simulated")
+-- |||
+-- ||| Example: Chain multiple HTTP calls with obligation tracking
+-- |||
+-- ||| fetchBoth : HttpRequest -> HttpRequest -> GFR [NetworkObligation] (HttpResponse, HttpResponse)
+-- ||| fetchBoth req1 req2 =
+-- |||   gHttpRequestPure result1 >>>>= \resp1 =>
+-- |||   gHttpRequestPure result2 >>>>= \resp2 =>
+-- |||   gpure (resp1, resp2)

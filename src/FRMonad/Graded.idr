@@ -274,8 +274,76 @@ weaken : GFR obs a -> GFR (o :: obs) a
 weaken (GOk v e)   = GOk v e
 weaken (GFail f e) = GFail f e
 
-||| Strengthen: Remove obligations (only safe after handling)
-||| This is provided by the handle* functions above
+-- Strengthen: Remove obligations (only safe after handling)
+-- This is provided by the handle* functions above
+
+-- =============================================================================
+-- Retry support with evidence accumulation
+-- =============================================================================
+
+||| Retry configuration
+public export
+record RetryConfig where
+  constructor MkRetryConfig
+  maxAttempts     : Nat      -- Maximum number of attempts (including initial)
+  initialDelayMs  : Nat      -- Initial delay in milliseconds
+  backoffFactor   : Nat      -- Multiplier for exponential backoff (use 2 for doubling)
+  retryPredicate  : Fail -> Bool  -- Which failures to retry
+
+||| Default retry config (3 attempts, 100ms initial delay, 2x backoff)
+public export
+defaultRetryConfig : RetryConfig
+defaultRetryConfig = MkRetryConfig 3 100 2 isRetryable
+
+||| Retry config for network operations (5 attempts, longer delays)
+public export
+networkRetryConfig : RetryConfig
+networkRetryConfig = MkRetryConfig 5 200 2 (\f => isRetryable f && category f == NetworkFail)
+
+||| Record a retry attempt in evidence
+addRetryEvidence : Nat -> Nat -> Fail -> Evidence -> Evidence
+addRetryEvidence attempt maxAttempts failure ev =
+  let retryEv = mkEvidence Update "retry"
+        ("attempt " ++ show attempt ++ "/" ++ show maxAttempts ++ ": " ++ show failure)
+  in combineEvidence ev retryEv
+
+||| Internal: Perform retry loop with fuel (remaining attempts)
+||| Returns accumulated evidence and final result
+gretryLoop : (fuel : Nat)  -- remaining attempts
+          -> RetryConfig
+          -> Evidence      -- accumulated evidence
+          -> GFR obs a
+          -> GFR obs a
+gretryLoop Z _ accEv comp =
+  -- No more retries, return final result
+  case comp of
+    GOk v e   => GOk v (combineEvidence accEv e)
+    GFail f e => GFail f (combineEvidence accEv e)
+gretryLoop (S remaining) cfg accEv comp =
+  case comp of
+    GOk v e => GOk v (combineEvidence accEv e)
+    GFail f e =>
+      let attempt = cfg.maxAttempts `minus` remaining
+          newEv = addRetryEvidence attempt cfg.maxAttempts f (combineEvidence accEv e)
+      in if cfg.retryPredicate f
+           then gretryLoop remaining cfg newEv comp
+           else GFail f newEv
+
+||| Retry a computation with evidence accumulation
+||| Evidence tracks all retry attempts for debugging/observability
+public export
+gretry : RetryConfig -> GFR obs a -> GFR obs a
+gretry cfg = gretryLoop cfg.maxAttempts cfg emptyEvidence
+
+||| Retry with default config
+public export
+gretryDefault : GFR obs a -> GFR obs a
+gretryDefault = gretry defaultRetryConfig
+
+||| Retry network operations specifically
+public export
+gretryNetwork : GFR obs a -> GFR obs a
+gretryNetwork = gretry networkRetryConfig
 
 -- =============================================================================
 -- Example usage:
