@@ -1,24 +1,36 @@
-||| Failure-Recovery Outcome Type and Combinators
+||| Failure-Recovery Monad Core
 |||
-||| The FR monad with recovery-aware composition.
+||| Based on the FR Monad paper: "Recovery-Preserving Kleisli Semantics for World-Computer Virtual Machines"
+|||
+||| Section 2: R := (V × E) ∪ (F × E) - the result type
+||| Section 3: FR morphisms f : S → (S × R)
+||| Section 4: Recovery-Aware Kleisli Composition
+||| Section 5: The Failure-Recovery Monad
+|||
 ||| Key principle: composability = existence of recovery-preserving morphisms
-module FRC.Outcome
+||| Monad laws are interpreted as semantic invariants ensuring that
+||| refactoring and modularization preserve recovery obligations.
+module FRMonad.Core
 
-import FRC.Conflict
-import FRC.Evidence
+import public FRMonad.Failure
+import public FRMonad.Evidence
 
 %default total
 
 -- =============================================================================
 -- FR: The Failure-Recovery Result Type
+-- R := (V × E) ∪ (F × E) from Section 2
 -- =============================================================================
 
 ||| Failure-Recovery result type
 ||| All computations return either success with evidence or failure with evidence
+||| This is R := (V × E) ∪ (F × E) from the paper
 public export
 data FR : Type -> Type where
+  ||| Success case: (V × E)
   Ok   : (value : a) -> (evidence : Evidence) -> FR a
-  Fail : (failure : IcpFail) -> (evidence : Evidence) -> FR a
+  ||| Failure case: (F × E)
+  Fail : (failure : Fail) -> (evidence : Evidence) -> FR a
 
 public export
 Show a => Show (FR a) where
@@ -54,12 +66,15 @@ getEvidence (Fail _ e) = e
 
 ||| Extract failure if present
 public export
-getFailure : FR a -> Maybe IcpFail
+getFailure : FR a -> Maybe Fail
 getFailure (Ok _ _)   = Nothing
 getFailure (Fail f _) = Just f
 
 -- =============================================================================
 -- Functor, Applicative, Monad instances
+-- Section 5: Monad Laws as Semantic Invariants
+-- - Unit laws: pure computations introduce no recovery obligations
+-- - Associativity: refactoring does not change recovery meaning
 -- =============================================================================
 
 public export
@@ -74,6 +89,10 @@ Applicative FR where
   (Ok _ e1) <*> (Fail x e2) = Fail x (combineEvidence e1 e2)
   (Fail x e) <*> _          = Fail x e
 
+||| Monad instance implementing Recovery-Aware Kleisli Composition (Section 4)
+||| 1. Evidence accumulates via ⊕
+||| 2. Failures propagate unless handled
+||| 3. No failure is erased without recovery
 public export
 Monad FR where
   (Ok v e1) >>= f = case f v of
@@ -92,7 +111,7 @@ ok phase label detail value = Ok value (mkEvidence phase label detail)
 
 ||| Create failure result with evidence
 public export
-fail : Phase -> String -> String -> IcpFail -> FR a
+fail : Phase -> String -> String -> Fail -> FR a
 fail phase label detail failure = Fail failure (mkEvidence phase label detail)
 
 ||| Create conflict failure (common in optimistic upgrader)
@@ -121,21 +140,23 @@ internal : Phase -> String -> String -> FR a
 internal phase label detail = fail phase label detail (Internal detail)
 
 -- =============================================================================
--- Handler Types
+-- Handler Types (Section 3.1: Recovery Interfaces)
 -- =============================================================================
 
 ||| Handler type: transforms failures into recovery actions
+||| Resolve_b : (F × E) → P(A_b) from Section 3.1
 public export
 Handler : Type -> Type -> Type
-Handler a b = (IcpFail, Evidence) -> FR b
+Handler a b = (Fail, Evidence) -> FR b
 
 ||| Recovery type: attempts to produce a value from failure info
 public export
 Recovery : Type -> Type
-Recovery a = (IcpFail, Evidence) -> Maybe a
+Recovery a = (Fail, Evidence) -> Maybe a
 
 -- =============================================================================
--- Recovery Combinators
+-- Recovery Combinators (Section 6: Composability)
+-- A system is composable iff required recovery-preserving morphisms exist
 -- =============================================================================
 
 ||| Apply handler to failure, pass through success
@@ -165,13 +186,13 @@ tryRecover _ ok = ok
 
 ||| Catch specific failure type and attempt recovery
 public export
-catchFail : (IcpFail -> Bool) -> Handler a a -> FR a -> FR a
+catchFail : (Fail -> Bool) -> Handler a a -> FR a -> FR a
 catchFail pred handler (Fail f e) = if pred f then handler (f, e) else Fail f e
 catchFail _ _ ok = ok
 
 ||| Catch failures by category
 public export
-catchCategory : ConflictCategory -> Handler a a -> FR a -> FR a
+catchCategory : FailCategory -> Handler a a -> FR a -> FR a
 catchCategory cat = catchFail (\f => category f == cat)
 
 ||| Catch failures by severity
@@ -190,25 +211,25 @@ catchRetryable = catchFail isRetryable
 
 ||| Require condition to be true, or fail with given failure
 public export
-require : Bool -> IcpFail -> Evidence -> FR ()
+require : Bool -> Fail -> Evidence -> FR ()
 require True  _ e = Ok () e
 require False f e = Fail f e
 
 ||| Require Maybe to be Just, or fail
 public export
-requireJust : Maybe a -> IcpFail -> Evidence -> FR a
+requireJust : Maybe a -> Fail -> Evidence -> FR a
 requireJust (Just v) _ e = Ok v e
 requireJust Nothing  f e = Fail f e
 
 ||| Require Either to be Right, or fail with Left message
 public export
-requireRight : Either String a -> (String -> IcpFail) -> Evidence -> FR a
+requireRight : Either String a -> (String -> Fail) -> Evidence -> FR a
 requireRight (Right v) _ e   = Ok v e
 requireRight (Left msg) f e  = Fail (f msg) e
 
 ||| Guard that fails if condition is false
 public export
-guard : Phase -> String -> Bool -> IcpFail -> FR ()
+guard : Phase -> String -> Bool -> Fail -> FR ()
 guard phase label cond failure =
   if cond
     then Ok () (mkEvidence phase label "guard passed")
@@ -233,22 +254,22 @@ sequence : List (FR a) -> FR (List a)
 sequence [] = Ok [] emptyEvidence
 sequence (x :: xs) = do
   v  <- x
-  vs <- sequence xs
+  vs <- FRMonad.Core.sequence xs
   pure (v :: vs)
 
 ||| Traverse with FR effect
 public export
 traverse : (a -> FR b) -> List a -> FR (List b)
-traverse f xs = sequence (map f xs)
+traverse f xs = FRMonad.Core.sequence (map f xs)
 
 ||| For each element, apply function, collect results
 public export
 forM : List a -> (a -> FR b) -> FR (List b)
-forM = flip FRC.Outcome.traverse
+forM = flip FRMonad.Core.traverse
 
 ||| Partition results into successes and failures
 public export
-partition : List (FR a) -> (List (a, Evidence), List (IcpFail, Evidence))
+partition : List (FR a) -> (List (a, Evidence), List (Fail, Evidence))
 partition [] = ([], [])
 partition (x :: xs) =
   let (oks, fails) = partition xs
@@ -271,13 +292,15 @@ tryAll [x] = x
 tryAll (x :: xs) = x <|> tryAll xs
 
 -- =============================================================================
--- Boundary Functions
+-- Boundary Functions (Section 3.1: Boundaries and Recovery Interfaces)
+-- A system is recovery-closed at boundary b if failures are either
+-- resolved internally or explicitly exported.
 -- =============================================================================
 
 ||| Boundary function: enforce recovery closure at phase boundary
 ||| Failures that escape the boundary are converted to trap/reject
 public export
-boundary : Phase -> FR a -> Either (IcpFail, Evidence) (a, Evidence)
+boundary : Phase -> FR a -> Either (Fail, Evidence) (a, Evidence)
 boundary _ (Ok v e)   = Right (v, e)
 boundary _ (Fail f e) = Left (f, e)
 
@@ -289,7 +312,7 @@ runFR (Fail f _) = Left (show f)
 
 ||| Run FR and get full result with evidence
 public export
-runFRWithEvidence : FR a -> Either (IcpFail, Evidence) (a, Evidence)
+runFRWithEvidence : FR a -> Either (Fail, Evidence) (a, Evidence)
 runFRWithEvidence (Ok v e)   = Right (v, e)
 runFRWithEvidence (Fail f e) = Left (f, e)
 
@@ -326,13 +349,13 @@ inPhase p = withEvidence (\e => { phase := p } e)
 
 ||| Convert Maybe to FR with custom failure
 public export
-fromMaybe : IcpFail -> Evidence -> Maybe a -> FR a
+fromMaybe : Fail -> Evidence -> Maybe a -> FR a
 fromMaybe _ e (Just v) = Ok v e
 fromMaybe f e Nothing  = Fail f e
 
 ||| Convert Either to FR
 public export
-fromEither : (String -> IcpFail) -> Evidence -> Either String a -> FR a
+fromEither : (String -> Fail) -> Evidence -> Either String a -> FR a
 fromEither _ e (Right v)  = Ok v e
 fromEither f e (Left msg) = Fail (f msg) e
 
@@ -347,3 +370,43 @@ public export
 toEither : FR a -> Either String a
 toEither (Ok v _)   = Right v
 toEither (Fail f _) = Left (show f)
+
+-- =============================================================================
+-- ICP-specific entry point helpers
+-- =============================================================================
+
+||| Wrap a query operation with proper evidence
+public export
+queryOp : String -> FR a -> FR a
+queryOp label = inPhase Query . tag ("query:" ++ label)
+
+||| Wrap an update operation with proper evidence
+public export
+updateOp : String -> FR a -> FR a
+updateOp label = inPhase Update . tag ("update:" ++ label)
+
+||| Wrap an init operation with proper evidence
+public export
+initOp : String -> FR a -> FR a
+initOp label = inPhase Init . tag ("init:" ++ label)
+
+-- =============================================================================
+-- Output helpers
+-- =============================================================================
+
+||| Run FR computation and convert to text response (for canister interface)
+public export
+runFRToText : Show a => FR a -> String
+runFRToText (Ok v e)   = "OK: " ++ show v
+runFRToText (Fail f e) = "ERROR: " ++ show f ++ "\n" ++ renderEvidence e
+
+||| Run FR computation returning JSON-like response
+public export
+runFRToJson : Show a => FR a -> String
+runFRToJson (Ok v e) =
+  "{\"status\":\"ok\",\"value\":" ++ show v ++
+  ",\"evidence\":{\"phase\":\"" ++ show e.phase ++ "\",\"label\":\"" ++ e.label ++ "\"}}"
+runFRToJson (Fail f e) =
+  "{\"status\":\"error\",\"error\":\"" ++ show f ++
+  "\",\"severity\":\"" ++ show (severity f) ++
+  "\",\"category\":\"" ++ show (category f) ++ "\"}"

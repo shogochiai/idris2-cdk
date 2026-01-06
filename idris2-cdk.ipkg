@@ -13,15 +13,9 @@ modules = ICP.IC0
         , ICP.StableMemory
         , ICP.Management.HttpOutcall
         , ICP.Management.TECDSA
-        -- FRC (Failure-Recovery Calculus) modules
-        , FRC.Core
-        , FRC.Conflict
-        , FRC.Evidence
-        , FRC.Outcome
-        , FRC.Cycles
-        , FRC.Upgrade
-        , FRC.HttpOutcall
-        , FRC.EVMChain
-        -- Karma (Indexed/Graded Monad extensions)
-        , Karma.Indexed
-        , Karma.Graded
+        -- FR Monad (Failure-Recovery Monad)
+        , FRMonad.Failure
+        , FRMonad.Evidence
+        , FRMonad.Core
+        , FRMonad.Indexed
+        , FRMonad.Graded

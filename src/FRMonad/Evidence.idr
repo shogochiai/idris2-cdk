@@ -1,15 +1,18 @@
-||| Evidence Tracking for ICP Canisters
+||| Evidence Tracking for FR Monad
 |||
-||| Following the Karma Monad principle: force observability.
-||| Every FR result must carry evidence regardless of success/failure.
+||| Based on the FR Monad paper: "Recovery-Preserving Kleisli Semantics for World-Computer Virtual Machines"
+|||
+||| E is the set of evidence, forming a monoid (E, ⊕, e₀).
+||| Key principle: force observability - every FR result must carry evidence.
+|||
+||| Section 4: Evidence accumulates via ⊕ under Kleisli composition.
 ||| This enables:
 ||| - Post-mortem debugging
 ||| - Replay/audit trails
 ||| - Performance analysis
 ||| - Cycles cost attribution
-module FRC.Evidence
+module FRMonad.Evidence
 
-import public ICP.Types
 import Data.List
 
 %default total
@@ -21,8 +24,50 @@ unlines [x]       = x
 unlines (x :: xs) = x ++ "\n" ++ unlines xs
 
 -- =============================================================================
--- Phase is imported from ICP.Types
+-- Phase: Execution context boundaries (Section 3.1: Boundaries)
 -- =============================================================================
+
+||| ICP canister lifecycle phases
+||| Each phase represents a distinct execution boundary with different capabilities
+public export
+data Phase
+  = Init           -- Canister initialization
+  | PreUpgrade     -- Before upgrade (save state)
+  | PostUpgrade    -- After upgrade (restore state)
+  | Update         -- State-modifying call
+  | Query          -- Read-only call
+  | Heartbeat      -- Periodic execution
+  | Inspect        -- Message inspection
+  | Timer          -- Timer callback
+  | HttpRequest    -- HTTP outcall context
+  | Composite      -- Composite query
+
+public export
+Show Phase where
+  show Init        = "Init"
+  show PreUpgrade  = "PreUpgrade"
+  show PostUpgrade = "PostUpgrade"
+  show Update      = "Update"
+  show Query       = "Query"
+  show Heartbeat   = "Heartbeat"
+  show Inspect     = "Inspect"
+  show Timer       = "Timer"
+  show HttpRequest = "HttpRequest"
+  show Composite   = "Composite"
+
+public export
+Eq Phase where
+  Init        == Init        = True
+  PreUpgrade  == PreUpgrade  = True
+  PostUpgrade == PostUpgrade = True
+  Update      == Update      = True
+  Query       == Query       = True
+  Heartbeat   == Heartbeat   = True
+  Inspect     == Inspect     = True
+  Timer       == Timer       = True
+  HttpRequest == HttpRequest = True
+  Composite   == Composite   = True
+  _ == _ = False
 
 -- =============================================================================
 -- Call Record: Inter-canister call tracking
@@ -85,7 +130,7 @@ Show HttpRecord where
            " (" ++ show h.cyclesCost ++ " cycles, " ++ show h.latencyMs ++ "ms)"
 
 -- =============================================================================
--- Evidence: Comprehensive observability record
+-- Evidence: The set E with monoid structure (E, ⊕, e₀)
 -- =============================================================================
 
 ||| Evidence record - captures comprehensive context for diagnosis
@@ -117,10 +162,11 @@ Show Evidence where
            " (cycles: " ++ show (minus e.cyclesStart e.cyclesEnd) ++ ")"
 
 -- =============================================================================
--- Evidence constructors
+-- Monoid identity: e₀ (neutral element)
 -- =============================================================================
 
-||| Empty evidence for pure operations
+||| Empty evidence - the monoid identity e₀
+||| pure computations introduce no recovery obligations (Unit law)
 public export
 emptyEvidence : Evidence
 emptyEvidence = MkEvidence
@@ -128,6 +174,10 @@ emptyEvidence = MkEvidence
   0 0 0
   [] [] [] []
   ""
+
+-- =============================================================================
+-- Evidence constructors
+-- =============================================================================
 
 ||| Create basic evidence
 public export
@@ -201,11 +251,13 @@ withParent : String -> Evidence -> Evidence
 withParent pid e = { parentId := pid } e
 
 -- =============================================================================
--- Evidence combination (monoid operation)
+-- Monoid operation: ⊕ (Evidence combination)
+-- Section 4: Evidence accumulates via ⊕ under Kleisli composition
 -- =============================================================================
 
-||| Combine evidence (monoid operation)
+||| Combine evidence (the monoid operation ⊕)
 ||| Merges tracking data, keeps latest context
+||| This is the key operation for recovery-aware Kleisli composition
 public export
 combineEvidence : Evidence -> Evidence -> Evidence
 combineEvidence e1 e2 = MkEvidence
@@ -223,12 +275,12 @@ combineEvidence e1 e2 = MkEvidence
   (e1.httpCalls ++ e2.httpCalls)
   (if e2.parentId == "" then e1.parentId else e2.parentId)
 
-||| Semigroup instance
+||| Semigroup instance: (<+>) = ⊕
 public export
 Semigroup Evidence where
   (<+>) = combineEvidence
 
-||| Monoid instance
+||| Monoid instance: neutral = e₀
 public export
 Monoid Evidence where
   neutral = emptyEvidence
