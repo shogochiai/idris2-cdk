@@ -19,3 +19,6 @@ modules = ICP.IC0
         , FRMonad.Core
         , FRMonad.Indexed
         , FRMonad.Graded
+        -- Tests
+        , FRMonad.Tests.AllTests
+        , ICP.Tests.AllTests

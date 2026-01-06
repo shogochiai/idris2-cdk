@@ -4,6 +4,9 @@ version = "0.1.0"
 [coverage]
 threshold = 80
 
+[semantic]
+threshold = 80
+
 [policy]
 auto_apply = false
 urgent_only = false
