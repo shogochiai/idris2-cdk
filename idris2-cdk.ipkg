@@ -11,6 +11,9 @@ modules = ICP.IC0
         , ICP.API
         , ICP.Candid.Types
         , ICP.StableMemory
+        , ICP.StableKV
+        , ICP.StableBTree
+        , ICP.IndexerSchema
         , ICP.Management.HttpOutcall
         , ICP.Management.TECDSA
         -- FR Monad (Failure-Recovery Monad)
